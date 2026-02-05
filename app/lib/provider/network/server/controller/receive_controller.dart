@@ -113,7 +113,7 @@ class ReceiveController {
           title: const Text('Destination folder missing'),
           content: Text(
             'The destination folder disappeared while receiving files:\n\n$destinationDir\n\n'
-                'Choose what you want to do next.',
+                'Choose what you want to do next. Then retry transfer.',
           ),
           actions: [
             TextButton(
@@ -163,6 +163,7 @@ class ReceiveController {
             TextButton(
               onPressed: () async {
                 Navigator.of(dialogContext).pop();
+                cancelSession();
                 await goHome();
               },
               child: const Text('Go to Home'),
