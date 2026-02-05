@@ -64,7 +64,7 @@ class ReceiveController {
 
   bool _isMissingDestinationError(Object error, String destinationDir) {
     if (destinationDir.startsWith('content://')) {
-      // SAF / content URIs won't behave like normal folders; treat separately.
+      //SAF/content URIs won't behave like normal folders; treat separately
       return false;
     }
 
@@ -73,18 +73,18 @@ class ReceiveController {
       final path = (error.path ?? '').toLowerCase();
       final dest = destinationDir.toLowerCase();
 
-      // Covers common cases: "No such file or directory" / missing parent.
+      //covers common cases: "No such file or directory" / missing parent
       if (msg.contains('no such file') || msg.contains('cannot open') || msg.contains('not found')) {
         return true;
       }
 
-      // If the failing path is within the destination directory, it's a strong hint.
+      //if the failing path is within the destination directory, it's a strong hint
       if (path.isNotEmpty && dest.isNotEmpty && path.startsWith(dest)) {
         return true;
       }
     }
 
-    // Fallback heuristic for string errors that bubble up from other layers.
+    //fallback for string errors that come from other places
     final text = error.toString().toLowerCase();
     return text.contains('no such file') || text.contains('file not found');
   }
@@ -92,7 +92,7 @@ class ReceiveController {
   Future<void> _showMissingDestinationDuringTransferDialog({
     required String destinationDir,
   }) async {
-    // Best-effort UI; don't crash if no context.
+    //best effort UI; don't crash if no context
     BuildContext ctx;
     try {
       ctx = Routerino.context;
@@ -120,11 +120,11 @@ class ReceiveController {
               onPressed: () async {
                 Navigator.of(dialogContext).pop();
 
-                // Try to recreate the folder.
+                //try to recreate the folder
                 try {
                   await Directory(destinationDir).create(recursive: true);
                 } catch (e) {
-                  // If creation fails, show a follow-up error.
+                  //if creation fails, show a follow-up error
                   try {
                     // ignore: use_build_context_synchronously
                     await showDialog<void>(
@@ -151,10 +151,10 @@ class ReceiveController {
 
                 final newDir = await pickDirectoryPath();
                 if (newDir != null && newDir.isNotEmpty) {
-                  // Persist for future transfers
+                  //for future transfers
                   await server.ref.notifier(settingsProvider).setDestination(newDir);
 
-                  // Apply immediately to the current session
+                  //apply immediately to the current session, doesn't matter session gets reset anyway
                   setSessionDestinationDir(newDir);
                 }
               },
@@ -179,7 +179,7 @@ class ReceiveController {
     try {
       final ctx = Routerino.context;
 
-      //ignore: use_build_context_synchronously, unawaited_futures
+      // ignore: use_build_context_synchronously, unawaited_futures
       await showDialog<void>(
         context: ctx,
         builder: (context) => AlertDialog(
@@ -500,7 +500,7 @@ class ReceiveController {
       return await request.respondJson(204);
     }
 
-    // user accepted: validate custom destination folder (if set) before sending starts
+    //user accepted: validate custom destination folder (if set) before sending starts
     if (customDestination != null) {
       try {
         final dir = Directory(destinationDir);
@@ -515,7 +515,7 @@ class ReceiveController {
 
           closeSession();
           //send receiver back to home screen
-          //ignore: use_build_context_synchronously, unawaited_futures
+          // ignore: use_build_context_synchronously, unawaited_futures
           Routerino.context.pushRootImmediately(() => const HomePage(initialTab: HomeTab.receive, appStart: false));
 
           return await request.respondJson(
@@ -533,7 +533,7 @@ class ReceiveController {
 
         closeSession();
         //send receiver back to home screen
-        //ignore: use_build_context_synchronously, unawaited_futures
+        // ignore: use_build_context_synchronously, unawaited_futures
         Routerino.context.pushRootImmediately(() => const HomePage(initialTab: HomeTab.receive, appStart: false));
 
         return await request.respondJson(
@@ -697,8 +697,8 @@ class ReceiveController {
         isImage: fileType == FileType.image,
         stream: request,
         onProgress: (savedBytes) {
-          // Abort if destination folder disappears mid-transfer (custom folder case).
-          // Check at most ~2x/sec to keep it cheap.
+          //abort if destination folder disappears mid-transfer (custom folder case)
+          //check at most ~2x/sec to keep it cheap
           if (!shouldSaveToGallery && !destinationDir.startsWith('content://')) {
             if (destExistsCheckStopwatch.elapsedMilliseconds >= 500) {
               destExistsCheckStopwatch.reset();
@@ -765,7 +765,6 @@ class ReceiveController {
         destinationErrorForSender =
         'Recipient destination folder was deleted during transfer. Receiver must recreate it or choose another folder, then retry.';
 
-        // Show receiver options (create / change folder).
         // ignore: unawaited_futures
         _showMissingDestinationDuringTransferDialog(destinationDir: destinationDir);
       }
@@ -841,7 +840,8 @@ class ReceiveController {
       _logger.info('Received all files.');
     }
 
-    // If this upload failed, send a specific error to the sender when we know why.
+    //if this upload failed, send a specific error to the sender when we know why
+    //Note: this message is only visible to sender if HTTP response can be delivered, which currently it can't
     final statusNow = server.getState().session?.files[fileId]?.status;
     if (statusNow != FileStatus.finished) {
       if (destinationMissing && destinationErrorForSender != null) {
@@ -851,11 +851,6 @@ class ReceiveController {
     }
 
     return await request.respondJson(200);
-
-
-  return server.getState().session?.files[fileId]?.status == FileStatus.finished
-        ? await request.respondJson(200)
-        : await request.respondJson(500, message: 'Could not save file. Check receiving device for more information.');
   }
 
   Future<void> _cancelHandler({
