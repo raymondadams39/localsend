@@ -174,20 +174,34 @@ class ReceiveController {
     );
   }
 
-  Future<void> _showReceiveErrorDialog(String title, String message) async {
+  Future<void> _showReceiveErrorDialog(String title, String message, {Future<void> Function()? onOk}) async {
     //some UI feedback, if there's no active UI context, it just won't show
     try {
-      final ctx = Routerino.context;
+      final ctx = Routerino.navigatorKey.currentContext;
+      if (ctx == null) {
+        return;
+      }
 
       // ignore: use_build_context_synchronously, unawaited_futures
       await showDialog<void>(
         context: ctx,
+        useRootNavigator: true,
         builder: (context) => AlertDialog(
           title: Text(title),
           content: Text(message),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () async {
+                Navigator.of(context).pop();
+
+                if (onOk != null) {
+                  try {
+                    await onOk();
+                  } catch (_) {
+                    //ignore
+                  }
+                }
+              },
               child: const Text('OK'),
             ),
           ],
@@ -367,7 +381,7 @@ class ReceiveController {
 
     final streamController = StreamController<Map<String, String>?>();
     server.setState(
-      (oldState) => oldState?.copyWith(
+          (oldState) => oldState?.copyWith(
         session: ReceiveSessionState(
           sessionId: sessionId,
           status: SessionStatus.waiting,
@@ -421,18 +435,18 @@ class ReceiveController {
         await server.ref
             .redux(receiveHistoryProvider)
             .dispatchAsync(
-              AddHistoryEntryAction(
-                entryId: const Uuid().v4(),
-                fileName: message,
-                fileType: FileType.text,
-                path: null,
-                savedToGallery: false,
-                isMessage: true,
-                fileSize: utf8.encode(message).length,
-                senderAlias: server.getState().session!.senderAlias,
-                timestamp: DateTime.now().toUtc(),
-              ),
-            );
+          AddHistoryEntryAction(
+            entryId: const Uuid().v4(),
+            fileName: message,
+            fileType: FileType.text,
+            path: null,
+            savedToGallery: false,
+            isMessage: true,
+            fileSize: utf8.encode(message).length,
+            senderAlias: server.getState().session!.senderAlias,
+            timestamp: DateTime.now().toUtc(),
+          ),
+        );
       }
 
       final receiveProvider = ViewProvider((ref) {
@@ -502,21 +516,28 @@ class ReceiveController {
 
     //user accepted: validate custom destination folder (if set) before sending starts
     if (customDestination != null) {
+      Future<void> goHome() async {
+        // ignore: use_build_context_synchronously
+        Routerino.context.pushRootImmediately(() => const HomePage(initialTab: HomeTab.receive, appStart: false));
+      }
       try {
         final dir = Directory(destinationDir);
         final exists = await dir.exists();
         if (!exists) {
           _logger.warning('Custom destination directory does not exist: $destinationDir');
 
-          await _showReceiveErrorDialog(
+          Future<void> goHomeAndClose() async {
+            closeSession();
+            // ignore: use_build_context_synchronously
+            Routerino.context.pushRootImmediately(() => const HomePage(initialTab: HomeTab.receive, appStart: false));
+            //send receiver back to home screen
+          }
+
+          _showReceiveErrorDialog(
             'Invalid destination folder',
             'The selected destination folder does not exist:\n$destinationDir\n\nPlease update it in Settings → Receive → Save to folder',
+            onOk: goHomeAndClose,
           );
-
-          closeSession();
-          //send receiver back to home screen
-          // ignore: use_build_context_synchronously, unawaited_futures
-          Routerino.context.pushRootImmediately(() => const HomePage(initialTab: HomeTab.receive, appStart: false));
 
           return await request.respondJson(
             400,
@@ -526,15 +547,18 @@ class ReceiveController {
       } catch (e) {
         _logger.warning('Failed to validate custom destination directory: $destinationDir', e);
 
-        await _showReceiveErrorDialog(
+        Future<void> goHomeAndClose() async {
+          closeSession();
+          // ignore: use_build_context_synchronously
+          Routerino.context.pushRootImmediately(() => const HomePage(initialTab: HomeTab.receive, appStart: false));
+          //send receiver back to home screen
+        }
+
+        _showReceiveErrorDialog(
           'Destination folder not accessible',
           'LocalSend cannot access the selected destination folder:\n$destinationDir\n\nPlease choose a different folder in Settings → Receive → Save to folder',
+          onOk: goHomeAndClose,
         );
-
-        closeSession();
-        //send receiver back to home screen
-        // ignore: use_build_context_synchronously, unawaited_futures
-        Routerino.context.pushRootImmediately(() => const HomePage(initialTab: HomeTab.receive, appStart: false));
 
         return await request.respondJson(
           400,
@@ -544,7 +568,7 @@ class ReceiveController {
     }
 
     server.setState(
-      (oldState) {
+          (oldState) {
         final receiveState = oldState!.session!;
         return oldState.copyWith(
           session: receiveState.copyWith(
@@ -575,7 +599,7 @@ class ReceiveController {
     if (quickSave) {
       // ignore: use_build_context_synchronously, unawaited_futures
       Routerino.context.pushImmediately(
-        () => ProgressPage(
+            () => ProgressPage(
           showAppBar: false,
           closeSessionOnClose: true,
           sessionId: sessionId,
@@ -661,12 +685,12 @@ class ReceiveController {
 
     // begin of actual file transfer
     server.setState(
-      (oldState) => oldState?.copyWith(
+          (oldState) => oldState?.copyWith(
         session: receiveState.copyWith(
           files: {...receiveState.files}
             ..update(
               fileId,
-              (_) => receivingFile.copyWith(
+                  (_) => receivingFile.copyWith(
                 status: FileStatus.sending,
               ),
             ),
@@ -713,10 +737,10 @@ class ReceiveController {
             server.ref
                 .notifier(progressProvider)
                 .setProgress(
-                  sessionId: receiveState.sessionId,
-                  fileId: fileId,
-                  progress: savedBytes / receivingFile.file.size,
-                );
+              sessionId: receiveState.sessionId,
+              fileId: fileId,
+              progress: savedBytes / receivingFile.file.size,
+            );
           }
         },
         lastModified: receivingFile.file.metadata?.lastModified,
@@ -728,7 +752,7 @@ class ReceiveController {
         return await request.respondJson(500, message: 'Server is in invalid state');
       }
       server.setState(
-        (oldState) => oldState?.copyWith(
+            (oldState) => oldState?.copyWith(
           session: oldState.session?.fileFinished(
             fileId: fileId,
             status: FileStatus.finished,
@@ -743,18 +767,18 @@ class ReceiveController {
       await server.ref
           .redux(receiveHistoryProvider)
           .dispatchAsync(
-            AddHistoryEntryAction(
-              entryId: fileId,
-              fileName: receivingFile.desiredName!,
-              fileType: receivingFile.file.fileType,
-              path: filePath,
-              savedToGallery: savedToGallery,
-              isMessage: false,
-              fileSize: receivingFile.file.size,
-              senderAlias: receiveState.senderAlias,
-              timestamp: DateTime.now().toUtc(),
-            ),
-          );
+        AddHistoryEntryAction(
+          entryId: fileId,
+          fileName: receivingFile.desiredName!,
+          fileType: receivingFile.file.fileType,
+          path: filePath,
+          savedToGallery: savedToGallery,
+          isMessage: false,
+          fileSize: receivingFile.file.size,
+          senderAlias: receiveState.senderAlias,
+          timestamp: DateTime.now().toUtc(),
+        ),
+      );
 
       _logger.info('Saved ${receivingFile.file.fileName}.');
     } catch (e, st) {
@@ -770,7 +794,7 @@ class ReceiveController {
       }
 
       server.setState(
-        (oldState) => oldState?.copyWith(
+            (oldState) => oldState?.copyWith(
           session: oldState.session?.fileFinished(
             fileId: fileId,
             status: FileStatus.failed,
@@ -786,10 +810,10 @@ class ReceiveController {
     server.ref
         .notifier(progressProvider)
         .setProgress(
-          sessionId: receiveState.sessionId,
-          fileId: fileId,
-          progress: 1,
-        );
+      sessionId: receiveState.sessionId,
+      fileId: fileId,
+      progress: 1,
+    );
 
     final session = server.getState().session;
     if (session == null) {
@@ -799,7 +823,7 @@ class ReceiveController {
     if (allowedStates.contains(session.status) && session.files.values.map((e) => e.status).isFinishedOrError) {
       final hasError = session.files.values.any((f) => f.status == FileStatus.failed);
       server.setState(
-        (oldState) => oldState?.copyWith(
+            (oldState) => oldState?.copyWith(
           session: oldState.session!.copyWith(
             status: hasError ? SessionStatus.finishedWithErrors : SessionStatus.finished,
             endTime: DateTime.now().millisecondsSinceEpoch,
@@ -926,8 +950,8 @@ class ReceiveController {
       server.ref
           .notifier(sendProvider)
           .cancelSessionByReceiver(
-            sendState.sessionId,
-          );
+        sendState.sessionId,
+      );
       return await request.respondJson(200);
     }
   }
@@ -987,7 +1011,7 @@ class ReceiveController {
   /// Updates the destination directory for the current session.
   void setSessionDestinationDir(String destinationDirectory) {
     server.setState(
-      (oldState) => oldState?.copyWith(
+          (oldState) => oldState?.copyWith(
         session: oldState.session?.copyWith(
           destinationDirectory: destinationDirectory.replaceAll('\\', '/'),
         ),
@@ -998,7 +1022,7 @@ class ReceiveController {
   /// Updates the "saveToGallery" setting for the current session.
   void setSessionSaveToGallery(bool saveToGallery) {
     server.setState(
-      (oldState) => oldState?.copyWith(
+          (oldState) => oldState?.copyWith(
         session: oldState.session?.copyWith(
           saveToGallery: saveToGallery,
         ),
@@ -1037,7 +1061,7 @@ class ReceiveController {
     }
 
     server.setState(
-      (oldState) => oldState?.copyWith(
+          (oldState) => oldState?.copyWith(
         session: null,
       ),
     );
@@ -1058,7 +1082,7 @@ void _cancelBySender(ServerUtils server) {
   }
 
   server.setState(
-    (oldState) => oldState?.copyWith(
+        (oldState) => oldState?.copyWith(
       session: oldState.session?.copyWith(
         status: SessionStatus.canceledBySender,
         endTime: DateTime.now().millisecondsSinceEpoch,
@@ -1079,7 +1103,7 @@ extension on ReceiveSessionState {
       files: {...files}
         ..update(
           fileId,
-          (file) => file.copyWith(
+              (file) => file.copyWith(
             status: status,
             path: path,
             savedToGallery: savedToGallery,
