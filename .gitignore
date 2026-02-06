@@ -17,7 +17,7 @@
 
 # Rust generated / lock files
 /app/rust/Cargo.lock
-/server/Cargo.lock
+#/server/Cargo.lock
 
 # Local-only Rust file
 /app/rust/src/api/model.rs
